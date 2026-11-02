@@ -25,7 +25,7 @@ import { absorbed, pendingCallTool, SessionModel } from "../components/session-c
 import type { ChatInput } from "../src/core/input-events.ts";
 import type { LhMessage } from "../src/core/native-messages.ts";
 import { newUserMessage, newAnswerResult, newThinkingMessage, needsContinuation, endsInDismissal, pendingQuestionOf } from "../src/core/native-messages.ts";
-import { endsInFailedTurn, newCompactionMarker, newPlanBlockMessage, projectView } from "../src/core/index.ts";
+import { buildSubagentSteer, endsInFailedTurn, newCompactionMarker, newPlanBlockMessage, projectView } from "../src/core/index.ts";
 import { dismissedAnswer } from "../src/core/question-core.ts";
 import { buildAnswer, type QuestionData } from "../src/core/question-core.ts";
 
@@ -1437,6 +1437,37 @@ function userText(id: string, text: string): LhMessage {
 }
 
 describe("adoptRecord — append-only adoption", () => {
+	for (const order of ["stream-first", "record-first", "record-between-events"] as const) {
+		it(`shows a delivered figure once when ${order}, preserving the live reply`, () => {
+			const initial = userText("u1", "Draw a staff.");
+			const marker = buildSubagentSteer(
+				{ id: "job_figure", kind: "visual", toolCallId: "figure-call" },
+				{ svg: "<svg/>", notes: "Verified staff." },
+			);
+			const m = model({ initialMessages: [initial] });
+			m.applyWireEvent({ type: "message_start", message: { role: "assistant", content: [{ type: "text", text: "Live reply" }] } });
+			const record = [initial, marker];
+			if (order === "record-first") m.adoptRecord(record);
+			m.applyWireEvent({ type: "message_start", message: marker });
+			if (order === "record-between-events") m.adoptRecord(record);
+			m.applyWireEvent({ type: "message_end", message: marker });
+			if (order === "stream-first") m.adoptRecord(record);
+			// Replayed stream events must not recreate an already saved card.
+			m.applyWireEvent({ type: "message_end", message: marker });
+			const state = m.getState();
+			assert.equal(state.nativeMessages.filter((message) => message.id === marker.id).length, 1);
+			assert.equal(state.messages.flatMap((message) => message.parts).filter((part) => part.type === "data-subagent-artifact").length, 1);
+			assert.deepEqual(state.nativeMessages.slice(0, 2).map((message) => message.id), [initial.id, marker.id]);
+			assert.ok(state.messages.some((message) => message.parts.some((part) => part.type === "text" && part.text === "Live reply")));
+			const second = buildSubagentSteer(
+				{ id: "job_second", kind: "visual", toolCallId: "second-call" },
+				{ svg: "<svg/>", notes: "Verified staff." },
+			);
+			m.applyWireEvent({ type: "message_end", message: second });
+			assert.equal(m.getState().messages.flatMap((message) => message.parts).filter((part) => part.type === "data-subagent-artifact").length, 2, "distinct jobs with identical output remain distinct");
+		});
+	}
+
 	it("splices a server-added steer between the record and the live tail", () => {
 		const m = model({ initialMessages: [userText("u1", "topic")] });
 		m.applyWireEvent({ type: "message_start", message: { role: "assistant", content: [{ type: "text", text: "streaming" }] } });

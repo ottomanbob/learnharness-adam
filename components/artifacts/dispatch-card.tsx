@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext } from "react";
+import { useContext, useEffect, useState } from "react";
 import { CheckIcon, SettingsIcon, XIcon } from "lucide-react";
 import { JobsContext } from "@/components/jobs-context";
 import { ChatActionsContext } from "@/components/chat";
@@ -85,10 +85,15 @@ function DispatchRefusedCard({ label, line, button }: { label: string; line: str
 }
 
 function DispatchActivityCard({ job, label }: { job: JobRecord | null; label: string }) {
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		const timer = setInterval(() => setNow(Date.now()), 1000);
+		return () => clearInterval(timer);
+	}, []);
 	// Elapsed from createdAt — jobs appear here only via the jobs feed (post-mount),
 	// so no SSR/hydration mismatch.
 	const elapsed =
-		job && job.createdAt ? Math.max(0, Math.round((Date.now() - Date.parse(job.createdAt)) / 1000)) : null;
+		job && job.createdAt ? Math.max(0, Math.round((now - Date.parse(job.createdAt)) / 1000)) : null;
 	return (
 		<div
 			className="rounded-xl border bg-card p-4 text-card-foreground"

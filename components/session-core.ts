@@ -131,12 +131,14 @@ export function pendingCallTool(messages: readonly LhMessage[], toolCallId: stri
 }
 
 /**
- * Has the record ABSORBED this optimistic tail entry? The write-ahead
+ * Has the record ABSORBED this tail entry? Server messages match by id.
+ * For optimistic messages, the write-ahead
  * persists content-identical copies with server-stamped ids — match on the
- * content, not the (local) id; only `c_`-prefixed local entries are ever
- * absorbed (live turn content is never dropped).
+ * content, not the (local) id; only `c_`-prefixed local entries may be
+ * absorbed by content (unsaved live turn content is never dropped).
  */
 export function absorbed(m: LhMessage, record: readonly LhMessage[]): boolean {
+	if (m.id && record.some((saved) => saved.id === m.id)) return true;
 	if (typeof m.id !== "string" || !m.id.startsWith("c_")) return false;
 	const role = (m as { role?: string }).role;
 	if (role === "user") {
@@ -400,6 +402,9 @@ export class SessionModel {
 					// live stream dropped the marker until the settle sync.
 					const mid = message.id;
 					if (mid === undefined) return false;
+					// A saved-chat refresh may have adopted this marker before
+					// its stream event arrives. Keep the saved copy authoritative.
+					if (this.base.some((saved) => saved.id === mid)) return false;
 					this.mutate(() => {
 						const idx = this.tail.findIndex((m) => m.id === mid);
 						this.tail =
@@ -936,8 +941,8 @@ export class SessionModel {
 	 * Append-only adoption (the mid-turn steer/artifact ground rule): swap
 	 * in the record — every current base message must still be present
 	 * (the server appends only) — keeping the live tail, minus the
-	 * optimistic entries the record has absorbed (their server-stamped
-	 * copies just landed; without this the input bubble would double).
+	 * entries the record has absorbed (saved stream markers by id, and
+	 * server-stamped optimistic inputs by content). Otherwise cards double.
 	 */
 	adoptRecord(record: LhMessage[]): void {
 		const recordIds = new Set(record.map((m) => (m as { id?: string }).id));
