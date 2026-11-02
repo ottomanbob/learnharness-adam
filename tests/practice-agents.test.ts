@@ -208,12 +208,12 @@ describe("the practice agent", () => {
 		const jobs = { chatId: "c1", jobStore: null as never, spawn: (() => {}) as never, searchAvailable: () => false };
 		const graph = { chatStore: null as never, graphStore: null as never };
 		const tools = practiceTools({ ...ctxOf([]), jobs, graph });
-		// Both jobs remain available keylessly; the prober's two map
+		// Shared jobs are exposed without a search key; the prober's two map
 		// readers stay behind their existing settings gate. Practice does
 		// not apply the teacher/prober user tool-toggle filter.
 		assert.deepEqual(
 			Object.keys(tools).sort(),
-			["conclude", "find", "grep", "list_propositions", "list_sessions", "ls", "pdf", "problem", "read", "research"],
+			["conclude", "demo", "find", "grep", "list_propositions", "list_sessions", "ls", "pdf", "problem", "read", "research", "visual"],
 		);
 		const withSearch = practiceTools({ ...ctxOf([]), jobs: { ...jobs, searchAvailable: () => true }, graph });
 		assert.ok(withSearch.research, "a live engine also keeps research");
@@ -327,12 +327,15 @@ describe("persistent practice nudges", () => {
 // ── the prompt composition ──────────────────────────────────────────────────
 
 describe("practice prompt composition (own directory + the formatting appendix)", () => {
-	it("composes base + doctrine — never the teaching base or question/confidence mechanics", () => {
+	it("composes base + doctrine + visuals — never the teaching base or question/confidence mechanics", () => {
 		const prompt = composeInstructions("practice");
 		// The base's voice section and the doctrine's spine are present…
 		assert.match(prompt, /Everything in this section deletes a default/);
 		assert.match(prompt, /You run practice sessions\./);
 		assert.match(prompt, /## Standing prohibitions/);
+		assert.match(prompt, /## Figures and interactive demos/);
+		assert.match(prompt, /omit the committed model solution/);
+		assert.match(prompt, /pose through `problem` once the successful result arrives/);
 		// …and nothing from the teaching system prompt or shared fragments.
 		assert.doesNotMatch(prompt, /install understanding/);
 		// The shared 20-question-tools doctrine (predict/check) must not
@@ -401,5 +404,6 @@ describe("practice prompt composition (own directory + the formatting appendix)"
 	it("the segment registry knows practice (override paths resolve)", () => {
 		assert.ok(allSegmentPaths().includes("practice/00-base.md"));
 		assert.ok(allSegmentPaths().includes("practice/10-doctrine.md"));
+		assert.ok(allSegmentPaths().includes("practice/20-visuals.md"));
 	});
 });

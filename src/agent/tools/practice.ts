@@ -1,6 +1,6 @@
 /**
  * THE PRACTICE TOOLS (practice sessions, owner design 2026-10-04): the
- * practice agent's ENTIRE toolset — `problem` (pose: terminates the turn;
+ * practice agent's session tools — `problem` (pose: terminates the turn;
  * the commitment rides the call's arguments, hidden from the learner UI)
  * and `conclude` (end the problem: normal result, the turn continues so
  * the same reply can reveal + pose the next). The gating law (owner
@@ -40,7 +40,7 @@ export interface PracticeToolContext {
 	graphNodes?: () => ReadonlyArray<Pick<import("../../core/contracts/graph.ts").GraphNode, "id" | "name">>;
 	/** THE RARELY-NEEDED SET (owner round 10, 2026-10-05): the map readers
 	 *  behind the SAME settings gate as the prober's (graphToolsEnabled at
-	 *  the composition root); the research + pdf jobs (both keyless).
+	 *  the composition root); the shared research, pdf, visual, and demo jobs.
 	 *  Each absent context (tests) = absent from the registry. */
 	graph?: GraphToolContext;
 	jobs?: JobToolContext;
@@ -225,8 +225,7 @@ export function practiceTools(ctx: PracticeToolContext): Record<string, AgentToo
 	const gate = createPracticeGate(ctx);
 	// THE RARELY-NEEDED SET (owner round 10): read/ls/find/grep over the
 	// learner's files (always — the same read-only set the teacher and
-	// prober carry), the research + pdf jobs (available without search
-	// keys; demo/visual stay teach-only), and
+	// prober carry), the shared background jobs, and
 	// the prober's map readers when the settings gate opened. None are
 	// toggle-filtered: problem/conclude are the session; these are
 	// exceptions the doctrine says to reach for rarely.
@@ -242,8 +241,7 @@ export function practiceTools(ctx: PracticeToolContext): Record<string, AgentToo
 		ls: lsTool,
 		find: findTool,
 		grep: grepTool,
-		...(jobs?.research ? { research: jobs.research } : {}),
-		...(jobs ? { pdf: jobs.pdf! } : {}),
+		...jobs,
 		...(ctx.graph ? proberGraphTools(ctx.graph) : {}),
 	});
 }

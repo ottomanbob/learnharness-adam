@@ -61,7 +61,8 @@ import { chatStore } from "../src/store/chats.ts";
 import { jobStore } from "../src/store/jobs.ts";
 import { handleChatRequest } from "../src/server/chat-handler.ts";
 import { runningTurn } from "../src/server/turn-runs.ts";
-import { createTeacherAgent } from "../src/agent/teacher-agent.ts";
+import { createPracticeAgent, createTeacherAgent } from "../src/agent/teacher-agent.ts";
+import { activeProblemOf } from "../src/core/native-messages.ts";
 import { projectView as projectNative } from "../src/core/view.ts";
 import type { PiEngine } from "../src/agent/models.ts";
 
@@ -992,6 +993,84 @@ describe("demo/visual job runners", () => {
 			headlessOverride.current = undefined;
 		}
 	});
+
+	for (const kind of ["demo", "visual"] as const) {
+		it(`practice dispatches ${kind} through the shared runner and renders it beside an active problem`, async () => {
+			const chat = chatStore.createChat(`Test: practice ${kind}`, "practice");
+			createdChats.push(chat.id);
+			chatStore.saveSettings(chat.id, { model: { provider: "openrouter", id: "z-ai/glm-5.3-flash" } });
+			const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><path d="M10 20H190 M10 35H190 M10 50H190 M10 65H190 M10 80H190" stroke="black"/></svg>';
+			const modelSolution = "PRIVATE COMMITTED SOLUTION";
+			const engine = scriptedModel([
+				{ toolCalls: [{ toolCallId: "practice-artifact", toolName: kind, input: kind === "demo" ? DEMO_INPUT : { brief: "Draw five staff lines without answer labels." } }] },
+				{ toolCalls: [{ toolCallId: "practice-problem", toolName: "problem", input: { statement: "Study the figure and describe its structure.", mode: "recall", modelSolution } }] },
+			]);
+			const headless = fakeHeadless();
+			headlessOverride.current = headless;
+			demoModelOverride.current = scriptedModel([
+				{ toolCalls: [{ toolCallId: "write", toolName: "write_demo", input: { html: GOOD_HTML } }] },
+				{ toolCalls: [{ toolCallId: "run", toolName: "run_demo", input: {} }] },
+				{ text: "Ready." },
+			]);
+			visualModelOverride.current = scriptedModel([
+				{ toolCalls: [{ toolCallId: "write", toolName: "write_svg", input: { svg } }] },
+				{ toolCalls: [{ toolCallId: "render", toolName: "render_svg", input: {} }] },
+				{ text: "The five staff lines are correct." },
+			]);
+			const { steers, runner } = testRunner();
+			try {
+				const ack = await handleChatRequest(
+					new Request("http://test/api/chat", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ chatId: chat.id, input: { type: "text", text: "Give me a visual practice problem." } }),
+					}),
+					(opts) => createPracticeAgent({
+						chatId: chat.id,
+						chatStore,
+						jobs: { chatId: chat.id, jobStore, spawn: (job, input) => {
+							createdJobs.push(job.id);
+							void runner.runJob(job.id, input);
+						} },
+					}, { engine, messages: opts.messages }),
+				);
+				await drain(ack);
+				await drainRunning(chat.id);
+				const job = jobStore.findJobByToolCallId(chat.id, "practice-artifact");
+				assert.ok(job, "the practice registry executes the shared dispatch tool");
+				assert.equal(job.kind, kind);
+				await waitFor(() => jobStore.getJob(job.id)!.status !== "running", 8000, "practice artifact completion");
+				assert.equal(jobStore.getJob(job.id)!.status, "done");
+				assert.equal(steers.length, 1);
+				assert.equal(kind === "demo" ? headless.demoRuns.length : headless.svgRenders.length, 1, "the artifact was verified before delivery");
+
+				const messages = [...chatStore.getChat(chat.id)!.messages, ...steers];
+				assert.equal(activeProblemOf(messages)?.toolCallId, "practice-problem", "delivery leaves the practice problem active");
+				const projected = projectNative(messages);
+				const part = projected.flatMap((message) => message.parts).find((p) => p.type === `tool-${kind}`);
+				assert.ok(part && "state" in part && part.state === "output-available", "the dispatch ack remains in the transcript");
+				const artifact = projected.find((message) => message.parts.some((p) => p.type === "data-subagent-artifact"));
+				assert.ok(artifact);
+				const html = renderToStaticMarkup(<SubagentSteerCard message={artifact} />);
+				if (kind === "demo") {
+					assert.match(html, /sandbox="allow-scripts"/);
+					assert.match(html, /Compound interest/);
+				} else {
+					assert.ok(html.includes(encodeURIComponent(svg)), "the delivered SVG renders inline as an image");
+				}
+				const problem = projected.flatMap((message) => message.parts).find((p) => p.type === "tool-problem");
+				assert.ok(problem);
+				const ProblemRenderer = artifactRenderers.problem!;
+				const problemHtml = renderToStaticMarkup(<ProblemRenderer part={problem as never} />);
+				assert.match(problemHtml, /Study the figure/);
+				assert.ok(!`${html}${problemHtml}`.includes(modelSolution), "the committed solution stays hidden");
+			} finally {
+				demoModelOverride.current = undefined;
+				visualModelOverride.current = undefined;
+				headlessOverride.current = undefined;
+			}
+		});
+	}
 });
 
 // ─── 6. registry wiring ──────────────────────────────────────────────────────
