@@ -7,6 +7,7 @@ import { InvertDiscIcon } from "@/components/artifacts/invert-disc";
 import { ChatActionsContext } from "@/components/chat";
 import { downloadFile, slugFilename } from "@/components/artifacts/download";
 import { DispatchCard } from "@/components/artifacts/dispatch-card";
+import { ArtifactPopoutButton } from "@/components/artifacts/popout";
 import type { ArtifactPartProps, DemoResult } from "@/src/core";
 
 /**
@@ -182,6 +183,7 @@ function DemoFrame({
 					<span className="truncate text-xs font-medium tracking-wide text-foreground">{title}</span>
 				</div>
 				<div className="flex shrink-0 items-center gap-1.5">
+					<ArtifactPopoutButton artifact={{ kind: "demo", title, html, inverted }} />
 					<Toggle
 						checked={inverted}
 						onChange={toggleInverted}

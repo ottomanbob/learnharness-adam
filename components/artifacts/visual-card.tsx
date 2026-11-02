@@ -9,6 +9,7 @@ import { useSessionMermaid } from "@/components/session-overlay";
 import { downloadFile } from "@/components/artifacts/download";
 import { DispatchCard } from "@/components/artifacts/dispatch-card";
 import { SvgImage } from "@/components/artifacts/svg-image";
+import { ArtifactPopoutButton } from "@/components/artifacts/popout";
 import type { ArtifactPartProps, VisualResult } from "@/src/core";
 
 /**
@@ -126,6 +127,7 @@ export function VisualOutputCard({
 			<div className="mt-2 flex items-center justify-between gap-2">
 				<div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Figure</div>
 				<div className="flex items-center gap-1.5">
+					<ArtifactPopoutButton artifact={{ kind: "visual", svg: result.svg, inverted }} />
 					{/* The invert affordance (owner round, 2026-10-07): the disc IS
 					    the half-filled contrast circle; the tooltip names it. */}
 					<Toggle
