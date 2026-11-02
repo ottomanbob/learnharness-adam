@@ -51,7 +51,7 @@ import { ToolCallCard } from "../components/artifacts/tool-call-card.tsx";
 import { JobsContext } from "../components/jobs-context.ts";
 import { demoInputSchema, jobTools, pdfInputSchema, visualInputSchema } from "../src/agent/tools/jobs.ts";
 import { runDemoBuilder } from "../src/agent/subagents/demo-builder.ts";
-import { headlessOverride, type DemoRunResult, type HeadlessApi } from "../src/agent/subagents/headless.ts";
+import { headlessOverride, realHeadless, type DemoRunResult, type HeadlessApi } from "../src/agent/subagents/headless.ts";
 import { createJobRunner, demoModelOverride, visualModelOverride } from "../src/agent/subagents/runner.ts";
 import { runVisualMaker } from "../src/agent/subagents/visual-maker.ts";
 import { buildAbortSteer, buildSubagentSteer, isSubagentFailure, setSteerUiInverted, type SteerMessage } from "../src/core/contracts.ts";
@@ -756,10 +756,41 @@ describe("visual maker (fake model + fake headless)", () => {
 		assert.match(result.notes ?? "", /^FAILED: the maker never wrote an SVG/);
 	});
 
-	it("fails with a clear message when no Chrome is available", async () => {
-		const result = await runVisualMaker({ brief: "b" }, { engine: scriptedModel([{ text: "x" }]), headless: noChromeHeadless() });
+	for (const explicitRender of [true, false]) {
+		it(`verifies SVGs natively without a browser (${explicitRender ? "requested" : "forced"} render)`, async () => {
+			let renders = 0;
+			const headless = {
+				...noChromeHeadless(),
+				async renderSvg(svg: string) {
+					renders++;
+					const png = await realHeadless.renderSvg(svg);
+					assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+					return png;
+				},
+			};
+			const model = scriptedModel([
+				{ toolCalls: [{ toolCallId: "w1", toolName: "write_svg", input: { svg: SVG_1 } }] },
+				explicitRender
+					? { toolCalls: [{ toolCallId: "r1", toolName: "render_svg", input: {} }] }
+					: { text: "Done." },
+				{ text: "Inspected the rendered figure." },
+			]);
+			const result = await runVisualMaker({ brief: "Number line." }, { engine: model, headless });
+			assert.equal(result.svg, SVG_1);
+			assert.equal(result.notes, "Inspected the rendered figure.");
+			assert.equal(renders, 1);
+		});
+	}
+
+	it("never delivers an SVG when the renderer fails", async () => {
+		const model = scriptedModel([
+			{ toolCalls: [{ toolCallId: "w1", toolName: "write_svg", input: { svg: SVG_1 } }] },
+			{ text: "Done." },
+		]);
+		const headless = { ...noChromeHeadless(), renderSvg: async () => { throw new Error("SVG renderer failed"); } };
+		const result = await runVisualMaker({ brief: "b" }, { engine: model, headless });
 		assert.equal(result.svg, "");
-		assert.match(result.notes ?? "", /^FAILED: .*Chrome/);
+		assert.match(result.notes ?? "", /^FAILED: rendering the final SVG failed — SVG renderer failed/);
 	});
 });
 
@@ -1006,6 +1037,16 @@ describe("demo/visual job runners", () => {
 				{ toolCalls: [{ toolCallId: "practice-problem", toolName: "problem", input: { statement: "Study the figure and describe its structure.", mode: "recall", modelSolution } }] },
 			]);
 			const headless = fakeHeadless();
+			if (kind === "visual") {
+				// Reproduce browser-less web mode through practice dispatch and
+				// the runner, with real native rasterization of the musical staff.
+				headless.available = () => false;
+				headless.unavailableReason = () => "No browser available";
+				headless.renderSvg = async (source) => {
+					headless.svgRenders.push(source);
+					return realHeadless.renderSvg(source);
+				};
+			}
 			headlessOverride.current = headless;
 			demoModelOverride.current = scriptedModel([
 				{ toolCalls: [{ toolCallId: "write", toolName: "write_demo", input: { html: GOOD_HTML } }] },

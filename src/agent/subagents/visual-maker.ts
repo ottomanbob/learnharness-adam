@@ -134,10 +134,9 @@ export async function runVisualMaker(input: VisualMakerInput, opts: VisualMakerO
 	const brief = input.brief.trim() || "(no brief)";
 	const maxIterations = opts.maxIterations ?? 8;
 
-	const reason = headless.unavailableReason();
-	if (reason) {
-		return { svg: "", notes: `FAILED: ${reason}` };
-	}
+	// Browser availability gates interactive demos, not static SVGs: renderSvg
+	// uses the native renderer first. Its actual errors are handled below,
+	// and delivery still requires a successful render and model inspection.
 
 	const tools = createVisualTools();
 	const toolDeclarations = Object.values(tools);
