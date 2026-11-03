@@ -39,6 +39,18 @@ function windowOptions(platform: string, env: Record<string, string> = {}) {
 }
 
 describe("desktop window chrome", () => {
+	it("preload sends artifact documents only through the dedicated browser handoff", async () => {
+		let bridge!: { openArtifactPopout(html: string): Promise<void> };
+		const invoked: unknown[][] = [];
+		runInNewContext(readFileSync(new URL("../electron/preload.cjs", import.meta.url), "utf8"), {
+			process: { platform: "darwin", argv: [] },
+			require: () => ({ contextBridge: { exposeInMainWorld: (_: string, value: typeof bridge) => { bridge = value; } }, ipcRenderer: { on() {}, invoke: async (...args: unknown[]) => { invoked.push(args); } } }),
+		});
+		const html = "<!doctype html><html><body>Figure</body></html>";
+		await bridge.openArtifactPopout(html);
+		assert.deepEqual(invoked, [["lh:artifact:open", html]]);
+	});
+
 	it("macOS keeps the proven traffic lights and does not enable WCO", () => {
 		const options = windowOptions("darwin");
 		assert.equal(options.titleBarStyle, "hiddenInset");
@@ -96,7 +108,7 @@ describe("desktop window chrome", () => {
 		runInNewContext(readFileSync(new URL("../electron/preload.cjs", import.meta.url), "utf8"), context);
 		assert.equal(bridge.platform, "win32");
 		assert.deepEqual(Object.keys(bridge).sort(), [
-			"chatgpt", "checkForUpdates", "expandWindow", "getPathForFile", "getUpdateState", "getZoom", "installUpdate", "onOpenSettings", "onUpdateStatus", "onZoom", "platform", "subscriptions",
+			"chatgpt", "checkForUpdates", "expandWindow", "getPathForFile", "getUpdateState", "getZoom", "installUpdate", "onOpenSettings", "onUpdateStatus", "onZoom", "openArtifactPopout", "platform", "subscriptions",
 		]);
 		assert.deepEqual(Object.keys(bridge.subscriptions as object).sort(), ["cancel", "consent", "disconnect", "login", "onChange", "open", "respond", "retry", "status"]);
 	});

@@ -12,7 +12,14 @@ const dom = parseHTML("<html><body></body></html>");
 Object.assign(globalThis, { window: dom.window, document: dom.document, Element: dom.window.Element,
 	HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
 const originalOpen = window.open;
-afterEach(() => { window.open = originalOpen; });
+const originalBridge = window.lh;
+const originalImplementation = Object.getOwnPropertyDescriptor(document, "implementation");
+afterEach(() => {
+	window.open = originalOpen;
+	window.lh = originalBridge;
+	if (originalImplementation) Object.defineProperty(document, "implementation", originalImplementation);
+	else Reflect.deleteProperty(document, "implementation");
+});
 
 const svg = '<svg width="200" height="100"><text>Note&nbsp;one</text><script>window.injected=true</script></svg>';
 const html = '<!doctype html><html><body><input type="range" value="3"><script>window.fresh=true</script></body></html>';
@@ -30,7 +37,7 @@ for (const artifact of [
 ] satisfies PopoutArtifact[]) {
 	test(`${artifact.kind} pop-out preserves isolation, dark mode, and original download`, async () => {
 		const popup = fakePopup();
-		assert.equal(openArtifactPopout(artifact), true);
+		assert.equal(await openArtifactPopout(artifact), true);
 		assert.equal(popup.value.opener, null);
 		assert.equal(popup.document.querySelector("input")!.checked, true);
 		assert.equal(popup.document.querySelectorAll("script").length, 0, "generated code never enters the window's document");
@@ -55,6 +62,25 @@ for (const artifact of [
 		assert.ok(href.startsWith(`data:${mime};charset=utf-8,`));
 		assert.equal(decodeURIComponent(href.split(",").slice(1).join(",")), artifact.kind === "visual" ? svg : html);
 		assert.ok(download.download.endsWith(artifact.kind === "visual" ? ".svg" : ".html"));
+	});
+
+	test(`desktop ${artifact.kind} exports the same standalone controls through its narrow bridge`, async () => {
+		let exported = "";
+		Object.defineProperty(document, "implementation", { configurable: true, value: {
+			createHTMLDocument: () => parseHTML("<html><head></head><body></body></html>").document,
+		} });
+		window.lh = { expandWindow() {}, openArtifactPopout: async (source) => { exported = source; } };
+		window.open = () => { throw new Error("Desktop must not use the blocked window.open path"); };
+		assert.equal(await openArtifactPopout(artifact), true);
+		assert.ok(exported.startsWith("<!doctype html>"));
+		const copy = parseHTML(exported).document;
+		assert.ok(copy.querySelector("input")!.hasAttribute("checked"), "serialized copy preserves dark mode");
+		assert.ok(copy.querySelector('a[download]'));
+		assert.equal(copy.querySelectorAll("script").length, 0);
+		if (artifact.kind === "demo") {
+			assert.equal(copy.querySelector("iframe")!.getAttribute("sandbox"), "allow-scripts");
+			assert.equal(copy.querySelector("iframe")!.srcdoc, html);
+		} else assert.ok(copy.querySelector('img[src^="data:image/svg+xml"]'));
 	});
 }
 

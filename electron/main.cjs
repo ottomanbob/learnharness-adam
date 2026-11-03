@@ -31,6 +31,7 @@ const { createSubscriptions, loadSubscriptionSDK } = require("./subscriptions.cj
 const { attachSubscriptionChild, subscriptionControl } = require("./subscription-ipc.cjs");
 const { desktopAPIHeaders } = require("./desktop-api.cjs");
 const { openWebSubscriptionBrowser } = require("./web-subscription-browser.cjs");
+const { createArtifactBrowser } = require("./artifact-browser.cjs");
 const { randomBytes } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -651,6 +652,12 @@ async function main() {
 	// (guards, menu, single instance).
 	const devUrl = process.env.LH_DEV_URL;
 	const url = devUrl ?? `http://127.0.0.1:${await freePort()}`;
+	const artifactBrowser = createArtifactBrowser({
+		isTrusted: (event) => trustedAppWindows.has(BrowserWindow.fromWebContents(event.sender)) && trustedSender(event, new URL(url).origin, BrowserWindow),
+		openExternal: (target) => shell.openExternal(target),
+	});
+	ipcMain.handle("lh:artifact:open", (event, html) => artifactBrowser.open(event, html));
+	app.once("before-quit", () => { void artifactBrowser.close(); });
 	if (!devUrl) {
 		desktopAPISecret = randomBytes(32).toString("hex");
 		const ownedOrigin = new URL(url).origin;

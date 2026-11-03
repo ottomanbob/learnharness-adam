@@ -29,12 +29,25 @@ body:has(#artifact-dark-mode:checked) .canvas, body:has(#artifact-dark-mode:chec
 /** A standalone copy: no React root, session state, or generated markup in
  * the window's document. It can stay open while the learner changes chats.
  * Figures remain image documents; demos retain the inline card's sandbox. */
-export function openArtifactPopout(artifact: PopoutArtifact): boolean {
+export async function openArtifactPopout(artifact: PopoutArtifact): Promise<boolean> {
+	if (window.lh?.openArtifactPopout) {
+		const doc = document.implementation.createHTMLDocument();
+		populateArtifactDocument(doc, artifact);
+		await window.lh.openArtifactPopout(`<!doctype html>\n${doc.documentElement.outerHTML}`);
+		return true;
+	}
 	// Open synchronously from the click so browsers recognize the user gesture.
 	const popup = window.open("", "_blank", "popup,width=900,height=700,resizable=yes,scrollbars=yes");
 	if (!popup) return false;
 	popup.opener = null;
-	const doc = popup.document;
+	populateArtifactDocument(popup.document, artifact);
+	popup.focus();
+	return true;
+}
+
+/** Build the same standalone content for an in-browser window or the
+ * desktop's external-browser handoff. Generated content stays isolated. */
+function populateArtifactDocument(doc: Document, artifact: PopoutArtifact): void {
 	const title = artifact.kind === "visual" ? "Figure" : artifact.title;
 	doc.documentElement.lang = "en";
 	doc.title = `${title} — LearnHarness`;
@@ -49,6 +62,8 @@ export function openArtifactPopout(artifact: PopoutArtifact): boolean {
 	dark.type = "checkbox";
 	dark.id = "artifact-dark-mode";
 	dark.checked = artifact.inverted;
+	// The desktop hands off serialized HTML, so preserve the initial state.
+	if (artifact.inverted) dark.setAttribute("checked", "");
 	label.append(dark, doc.createTextNode("Dark mode"));
 	// Native controls keep working after the opener's JS context is gone.
 	// Original bytes go in the download URL, never the document's markup.
@@ -77,12 +92,10 @@ export function openArtifactPopout(artifact: PopoutArtifact): boolean {
 		main.append(frame);
 	}
 	doc.body.replaceChildren(header, main);
-	popup.focus();
-	return true;
 }
 
 export function ArtifactPopoutButton({ artifact }: { artifact: PopoutArtifact }) {
-	const [blocked, setBlocked] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 	const label = artifact.kind === "visual" ? "figure" : "demo";
 	return <>
 		<button
@@ -90,11 +103,18 @@ export function ArtifactPopoutButton({ artifact }: { artifact: PopoutArtifact })
 			aria-label={`Pop out ${label}`}
 			title="Pop out into a separate window"
 			data-testid={`${artifact.kind}-popout`}
-			onClick={() => setBlocked(!openArtifactPopout(artifact))}
+			onClick={async () => {
+				setError(null);
+				try {
+					if (!await openArtifactPopout(artifact)) setError("Allow pop-ups for this site, then try again.");
+				} catch {
+					setError("Couldn't open the pop-out. Please try again.");
+				}
+			}}
 			className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 		>
 			<ExternalLinkIcon className="size-3.5" />
 		</button>
-		{blocked && <span role="alert" className="text-xs text-muted-foreground">Allow pop-ups for this site, then try again.</span>}
+		{error && <span role="alert" className="text-xs text-muted-foreground">{error}</span>}
 	</>;
 }
